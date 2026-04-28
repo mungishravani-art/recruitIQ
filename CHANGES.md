@@ -1,0 +1,119 @@
+'use client'
+
+import { useState } from 'react'
+import type { Pool } from '@/types'
+import type { Page } from '@/app/page'
+import { AddPoolModal } from './Modals'
+
+interface Props {
+  pools: Pool[]
+  activePage: Page
+  onNavigate: (p: Page) => void
+  onPoolClick: (pid: string) => void
+  onAddPool: () => void
+}
+
+const NAV = [
+  { key: 'dashboard' as Page, label: 'Dashboard',         icon: '⊞' },
+  { key: 'search'    as Page, label: 'Search Candidates', icon: '⌕' },
+  { key: 'pipeline'  as Page, label: 'Pipeline',          icon: '⊟' },
+]
+
+export default function Sidebar({ pools, activePage, onNavigate, onPoolClick, onAddPool }: Props) {
+  const [showAddPool, setShowAddPool] = useState(false)
+
+  return (
+    <>
+      <aside style={{
+        width: 220, flexShrink: 0, background: 'var(--bg2)',
+        borderRight: '1px solid var(--border)', display: 'flex', flexDirection: 'column',
+      }}>
+        {/* Logo */}
+        <div style={{ padding: '20px 18px 16px', borderBottom: '1px solid var(--border)' }}>
+          <div style={{ fontFamily: 'var(--font-display)', fontSize: 22, color: 'var(--accent)', letterSpacing: '-0.3px' }}>
+            RecruitIQ
+          </div>
+          <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 2, fontWeight: 300, display: 'flex', alignItems: 'center', gap: 4 }}>
+            Belgium Market
+            <span style={{ display: 'inline-flex', height: 11, width: 18, borderRadius: 2, overflow: 'hidden', verticalAlign: 'middle' }}>
+              <span style={{ flex: 1, background: '#1E1E1E' }}/>
+              <span style={{ flex: 1, background: '#F5D00B' }}/>
+              <span style={{ flex: 1, background: '#C8102E' }}/>
+            </span>
+          </div>
+        </div>
+
+        {/* Nav */}
+        <div style={{ flex: 1, overflowY: 'auto', padding: '8px 0' }}>
+          <div style={{ padding: '10px 10px 4px', fontSize: 10, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: 600 }}>
+            Navigation
+          </div>
+          {NAV.map(n => (
+            <button key={n.key} onClick={() => onNavigate(n.key)} style={{
+              display: 'flex', alignItems: 'center', gap: 9,
+              padding: '8px 10px', margin: '1px 6px', borderRadius: 10,
+              cursor: 'pointer', fontSize: 13, border: 'none',
+              width: 'calc(100% - 12px)', textAlign: 'left',
+              fontFamily: 'var(--font-sans)',
+              color: activePage === n.key ? 'var(--accent)' : 'var(--text2)',
+              background: activePage === n.key ? 'rgba(200,181,96,0.12)' : 'transparent',
+              fontWeight: activePage === n.key ? 500 : 400,
+            }}>
+              <span style={{ fontSize: 16, opacity: 0.8 }}>{n.icon}</span>
+              {n.label}
+            </button>
+          ))}
+
+          <div style={{ padding: '10px 10px 4px', marginTop: 8, fontSize: 10, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: 600 }}>
+            Pools
+          </div>
+          {pools.map(p => (
+            <button key={p.id} onClick={() => onPoolClick(p.id)} style={{
+              display: 'flex', alignItems: 'center', gap: 9,
+              padding: '8px 10px', margin: '1px 6px', borderRadius: 10,
+              cursor: 'pointer', color: 'var(--text2)', background: 'transparent',
+              fontSize: 13, border: 'none', width: 'calc(100% - 12px)',
+              textAlign: 'left', fontFamily: 'var(--font-sans)',
+            }}>
+              <span style={{ width: 8, height: 8, borderRadius: '50%', background: p.color, flexShrink: 0 }}/>
+              {p.name}
+            </button>
+          ))}
+
+          <button onClick={() => setShowAddPool(true)} style={{
+            display: 'flex', alignItems: 'center', gap: 8,
+            padding: '8px 10px', margin: '1px 6px', borderRadius: 10,
+            cursor: 'pointer', color: 'var(--text3)', background: 'transparent',
+            fontSize: 12, border: 'none', width: 'calc(100% - 12px)',
+            textAlign: 'left', fontFamily: 'var(--font-sans)',
+          }}>
+            <span style={{ fontSize: 15 }}>+</span> Add Pool
+          </button>
+        </div>
+
+        {/* Footer — Groq status (no key input — it's in env) */}
+        <div style={{ padding: 12, borderTop: '1px solid var(--border)' }}>
+          <div style={{ background: 'var(--bg3)', border: '1px solid var(--border)', borderRadius: 10, padding: '10px 12px' }}>
+            <div style={{ fontSize: 10, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 5 }}>
+              AI Engine
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <span style={{ width: 7, height: 7, borderRadius: '50%', background: 'var(--green)', display: 'inline-block', flexShrink: 0 }}/>
+              <span style={{ fontSize: 12, color: 'var(--text2)' }}>Groq · llama3-70b</span>
+            </div>
+            <div style={{ fontSize: 10, color: 'var(--text3)', marginTop: 4 }}>
+              CV parsing + JD matching
+            </div>
+          </div>
+        </div>
+      </aside>
+
+      {showAddPool && (
+        <AddPoolModal
+          onClose={() => setShowAddPool(false)}
+          onSaved={() => { setShowAddPool(false); onAddPool() }}
+        />
+      )}
+    </>
+  )
+}

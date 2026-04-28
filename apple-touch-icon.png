@@ -1,0 +1,122 @@
+// src/app/api/parse-cv/route.ts
+// Receives the raw CV file (multipart), extracts text from PDF or DOCX,
+// then calls Groq server-side. GROQ_API_KEY is an env var — never touches the browser.
+
+import { NextRequest, NextResponse } from 'next/server'
+import Groq from 'groq-sdk'
+
+// ─── PDF text extraction (no external binary needed) ─────────────────────────
+async function extractPdfText(buffer: ArrayBuffer): Promise<string> {
+  // Dynamically import so the worker doesn't break during SSR build
+  const pdfjsLib = await import('pdfjs-dist/legacy/build/pdf.js')
+  // Disable worker for server-side usage
+  pdfjsLib.GlobalWorkerOptions.workerSrc = ''
+
+  const pdf = await pdfjsLib.getDocument({ data: new Uint8Array(buffer) }).promise
+  const parts: string[] = []
+  for (let i = 1; i <= pdf.numPages; i++) {
+    const page = await pdf.getPage(i)
+    const content = await page.getTextContent()
+    const pageText = content.items
+      .map((item: unknown) => {
+        if (typeof item === 'object' && item !== null && 'str' in item) {
+          return (item as { str: string }).str
+        }
+        return ''
+      })
+      .join(' ')
+    parts.push(pageText)
+  }
+  return parts.join('\n')
+}
+
+// ─── DOCX text extraction ─────────────────────────────────────────────────────
+async function extractDocxText(buffer: ArrayBuffer): Promise<string> {
+  const mammoth = await import('mammoth')
+  const result = await mammoth.extractRawText({ arrayBuffer: buffer })
+  return result.value
+}
+
+// ─── Route handler ────────────────────────────────────────────────────────────
+export async function POST(req: NextRequest) {
+  try {
+    // Accept multipart/form-data with a 'file' field
+    const formData = await req.formData()
+    const file = formData.get('file') as File | null
+
+    if (!file) {
+      return NextResponse.json({ error: 'No file uploaded' }, { status: 400 })
+    }
+
+    const buffer = await file.arrayBuffer()
+    const name = file.name.toLowerCase()
+
+    let text = ''
+
+    if (name.endsWith('.pdf')) {
+      text = await extractPdfText(buffer)
+    } else if (name.endsWith('.docx') || name.endsWith('.doc')) {
+      text = await extractDocxText(buffer)
+    } else {
+      // Fallback: treat as plain text (txt, etc.)
+      text = new TextDecoder().decode(buffer)
+    }
+
+    if (!text.trim()) {
+      return NextResponse.json({ error: 'Could not extract text from file. Try a text-based PDF or .docx.' }, { status: 422 })
+    }
+
+    // ── Call Groq ──────────────────────────────────────────────────────────
+    const groq = new Groq({ apiKey: process.env.GROQ_API_KEY })
+
+    const completion = await groq.chat.completions.create({
+      model: 'llama3-70b-8192',
+      temperature: 0.1,
+      max_tokens: 900,
+      messages: [
+        {
+          role: 'system',
+          content: `You are a recruitment assistant specialising in the Belgium market.
+Extract structured candidate data from CV text. 
+Return ONLY a valid JSON object — no markdown fences, no preamble, no explanation.
+
+Fields:
+- name         (string)
+- role         (string: most recent job title)
+- company      (string: most recent employer)
+- location     (string: city, prefer Belgian cities)
+- experience   (string: total years, e.g. "6 years")
+- notice       (string: notice period if stated, else null)
+- salary       (string: expected or current salary/rate if stated, else null)
+- auth         (string: one of "EU Citizen" | "Belgian Resident" | "Requires Sponsorship" | "Unknown")
+- linkedin     (string: LinkedIn URL if found, else null)
+- langs        (array of strings: languages spoken, e.g. ["Dutch","French","English"])
+- skills       (array of strings: 10-25 technical skills, tools, frameworks, methodologies, certifications)`,
+        },
+        {
+          role: 'user',
+          content: `Extract candidate data from this CV:\n\n${text.slice(0, 5000)}`,
+        },
+      ],
+    })
+
+    const raw = completion.choices[0]?.message?.content ?? '{}'
+    let parsed: Record<string, unknown> = {}
+    try {
+      parsed = JSON.parse(raw.replace(/```json|```/g, '').trim())
+    } catch {
+      return NextResponse.json({ error: 'Groq returned unparseable JSON', raw }, { status: 500 })
+    }
+
+    return NextResponse.json(parsed)
+  } catch (err: unknown) {
+    console.error('[parse-cv]', err)
+    const message = err instanceof Error ? err.message : 'Unknown error'
+    return NextResponse.json({ error: message }, { status: 500 })
+  }
+}
+
+// Allow up to 10 MB uploads
+export const config = {
+  api: { bodyParser: false },
+}
